@@ -64,14 +64,17 @@ class NICEModel(keras.models.Model):
         return x
 
 def model(args, dataset):
-    test = tf.ones(shape = (1, 784))
+    
     nice = NICEModel()
+    
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
 
     loss_metric = tf.keras.metrics.Mean()
 
     for epoch in range(args.epochs):
-        for images, labels in dataset:
+        print('Start of epoch %d' % (epoch,))
+
+        for step, images in enumerate(dataset):
             with tf.GradientTape() as tape:
                 prediction, diag = nice(images)
                 loss = m_loss(prediction, diag)
@@ -80,8 +83,8 @@ def model(args, dataset):
             optimizer.apply_gradients(zip(grads, nice.trainable_weights))        
             
             loss_metric(loss)
-
-        print('epoch %s: loss = %s' % (epoch, loss_metric.result()))
+            if step % 100 == 0:
+                print('step %s: loss = %s' % (step, loss_metric.result()))
 
 
 

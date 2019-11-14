@@ -43,14 +43,14 @@ def minst_old(n_batch_train, n_batch_test, size = 28):
     return train_iterator, test_iterator, train_num, test_num 
 
 def minst(batch, size = 28):
-    def preprocessing_fn(x, y):
-        x, y = tf.cast(x / 255, tf.float32), tf.cast(y, tf.int64)
-        x, y = tf.reshape(x, [size * size]), tf.reshape(y, [-1])
-        return x, y
+    def preprocessing_fn(x):
+        x = tf.cast(x / 255, tf.float32) # , tf.cast(y, tf.int64)
+        x = tf.reshape(x, [size * size]) # , tf.reshape(y, [-1])
+        return x
 
     (images, labels), _ = tf.keras.datasets.mnist.load_data()
 
-    dataset = (tf.data.Dataset.from_tensor_slices((images, labels))
+    dataset = (tf.data.Dataset.from_tensor_slices(images)
                         .map(preprocessing_fn, num_parallel_calls = 16)
                         .shuffle(1000)
                         .batch(batch))
