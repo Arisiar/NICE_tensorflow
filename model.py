@@ -1,55 +1,7 @@
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 import numpy as np
-
-def dense(x, latent_dim, hidden_dim, num = 5, name = 'dense'):
-    with tf.variable_scope(name):
-        for i in range(num):
-            x = tf.layers.dense(x, hidden_dim, activation = 'relu', name = 'dense_' + str(i))
-        x = tf.layers.dense(x, latent_dim, activation = 'relu', name = 'output') 
-    return x
-
-def split(x):
-    with tf.name_scope('split'):
-        hidden_dim = int(x.shape[-1] / 2)
-        x = tf.reshape(x, [-1, hidden_dim, 2])
-    return x[:,:,0], x[:,:,1]
-
-def concat(x):
-    with tf.name_scope('concat'):
-        x = tf.concat(x, axis = 1)
-    return x
-
-class baseCoupleLayer:
-    def forward(self, x, hidden_dim, name = 'forward'):
-        latent_dim = int(hidden_dim / 2)
-        x1, x2 = split(x)
-        x2 = self.coupling(x2, dense(x1, latent_dim, hidden_dim, name = name), inverse = False)
-        x = concat([x1, x2])
-        return x
-    
-    def inverse(self, x, hidden_dim, name = 'inverse'):
-        latent_dim = int(hidden_dim / 2)
-        x1, x2 = split(self.x)
-        x2 = self.coupling(x2, dense(x1, latent_dim, hidden_dim, name = name), inverse = True)
-        x = concat([x1, x2])
-        return x
-    
-    def coupling(self, a, b, inverse):
-        raise NotImplementedError("[_BaseCouplingLayer] Don't call abstract base layer!")
-
-class additiveCoupleLayer(baseCoupleLayer):
-    def coupling(self, a, b, inverse):
-        if inverse:
-            return a - b
-        else:
-            return a + b
-
-class multiplicativeCoupleLayer(baseCoupleLayer):
-    def coupling(self, a, b, inverse):
-        if inverse:
-            return tf.multiply(a, tf.reciprocal(b))        
-        else:
-            return tf.multiply(a, b) 
+import os
+from layers import additiveCoupleLayer, multiplicativeCoupleLayer
 
 class NICE():
     def __init__(self, input_dim):
@@ -79,24 +31,86 @@ class NICE():
 
         return x
 
-def model(sess, train_iterator, test_iterator, dim = 784, reuse = False):
-    def m_loss(x, diag, labels = 10):
-        with tf.variable_scope('model', reuse = reuse):
-            loss = tf.reduce_mean(-(tf.reduce_sum(diag) \
-                - tf.reduce_sum(tf.math.log1p(tf.exp(x)) + tf.math.log1p(tf.exp(-x)), axis = 1)))
-        return loss
-    _x, _y = train_iterator
-    model = NICE(_x.shape[-1])
-    with tf.variable_scope('encoder', reuse = reuse):
-        x = model.encoder(_x)
-    
-    loss = m_loss(x, model.diag)
-    
-    var = tf.trainable_variables()
-    with tf.name_scope('optimizer'):
-        optimizer = tf.train.AdamOptimizer(0.0001, beta1 = 0.0, beta2 = 0.9).minimize(loss, var_list = var)
+######################  Tensorflow 2.x ######################
+from tensorflow import keras
+from layers import CoupleLayer, ScaleLayer
 
-    # train = sess.run([optimizer, en_loss])
+def m_loss(x, diag):
+    return -(tf.reduce_sum(diag) - tf.reduce_sum(tf.math.log1p(tf.exp(x)) + tf.math.log1p(tf.exp(-x)), axis = 1))
+    
+class NICEModel(keras.models.Model):
+    def __init__(self):
+        super(NICEModel, self).__init__()
+        self.couple_1 = CoupleLayer()
+        self.couple_2 = CoupleLayer()
+        self.couple_3 = CoupleLayer()
+        self.couple_4 = CoupleLayer()
+        self.scale = ScaleLayer()
+
+    def call(self, inputs):
+        x = self.couple_1(inputs)
+        x = self.couple_2(x)
+        x = self.couple_3(x)
+        x = self.couple_4(x)
+        x, diag = self.scale(x)
+        return x, diag
+        
+    def inverse(self):
+        x = self.scale.inverse()(inputs)
+        x = self.couple_4.inverse()(x)
+        x = self.couple_3.inverse()(x)
+        x = self.couple_2.inverse()(x)
+        x = self.couple_1.inverse()(x)
+        return x
+
+def model(args, dataset):
+
+    nice = NICEModel()
+
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+
+    loss_metric = tf.keras.metrics.Mean()
+
+    for epoch in range(args.epochs):
+        for images, labels in dataset:
+            with tf.GradientTape() as tape:
+                prediction, diag = nice(images)
+                loss = m_loss(prediction, diag)
+            
+            grads = tape.gradient(loss, nice.trainable_weights)
+            optimizer.apply_gradients(zip(grads, nice.trainable_weights))        
+            
+            loss_metric(loss)
+
+        print('epoch %s: loss = %s' % (epoch, loss_metric.result()))
+
+
+    # model = NICE(_x.shape[-1])
+    # with tf.variable_scope('encoder', reuse = reuse):
+    #     x = model.encoder(_x)
+    
+    # loss = m_loss(x, model.diag)
+    
+    # var = tf.trainable_variables()
+    # with tf.name_scope('optimizer'):
+    #     optimizer = tf.train.AdamOptimizer(args.lr, beta1 = args.beta1, beta2 = args.beta2).minimize(loss, var_list = var)
+
+    # saver = tf.train.Saver()
+
+
+    # init = tf.compat.v1.global_variables_initializer()
+    # sess.run(init)
+
+    # for i in range(1, args.epochs):
+    #     batch = (/ args.batch)
+    #     for j in range():
+    #     _, train_loss = sess.run([optimizer, loss])
+    #     if (i % args.save_epochs) == 0:
+    #         saver.save(sess, args.save_path + 'model.ckpt')
+            # print("Epoch [%d / %d] [%d / %d]: Loss: %f" % (i, args.epochs, ))
+    
+
+
 
     
 
