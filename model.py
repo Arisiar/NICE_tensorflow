@@ -64,9 +64,8 @@ class NICEModel(keras.models.Model):
         return x
 
 def model(args, dataset):
-
+    test = tf.ones(shape = (1, 784))
     nice = NICEModel()
-
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
 
     loss_metric = tf.keras.metrics.Mean()
@@ -83,32 +82,6 @@ def model(args, dataset):
             loss_metric(loss)
 
         print('epoch %s: loss = %s' % (epoch, loss_metric.result()))
-
-
-    # model = NICE(_x.shape[-1])
-    # with tf.variable_scope('encoder', reuse = reuse):
-    #     x = model.encoder(_x)
-    
-    # loss = m_loss(x, model.diag)
-    
-    # var = tf.trainable_variables()
-    # with tf.name_scope('optimizer'):
-    #     optimizer = tf.train.AdamOptimizer(args.lr, beta1 = args.beta1, beta2 = args.beta2).minimize(loss, var_list = var)
-
-    # saver = tf.train.Saver()
-
-
-    # init = tf.compat.v1.global_variables_initializer()
-    # sess.run(init)
-
-    # for i in range(1, args.epochs):
-    #     batch = (/ args.batch)
-    #     for j in range():
-    #     _, train_loss = sess.run([optimizer, loss])
-    #     if (i % args.save_epochs) == 0:
-    #         saver.save(sess, args.save_path + 'model.ckpt')
-            # print("Epoch [%d / %d] [%d / %d]: Loss: %f" % (i, args.epochs, ))
-    
 
 
 

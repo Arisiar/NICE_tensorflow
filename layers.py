@@ -9,14 +9,12 @@ def dense(x, latent_dim, hidden_dim, num = 5, name = 'dense'):
     return x
 
 def split(inputs):
-    with tf.name_scope('split'):
-        dim = inputs.shape[-1] // 2
-        x = tf.reshape(inputs, [-1, dim, 2])
+    dim = inputs.shape[-1] // 2
+    x = tf.reshape(inputs, [-1, dim, 2])
     return x[:,:,0], x[:,:,1]
 
 def concat(inputs):
-    with tf.name_scope('concat'):
-        x = tf.concat(inputs, axis = 1)
+    x = tf.concat(inputs, axis = 1)
     return x
 
 class baseCoupleLayer:
@@ -55,30 +53,32 @@ class multiplicativeCoupleLayer(baseCoupleLayer):
 ######################  Tensorflow 2.x / Keras ######################
 from tensorflow import keras
 
-def dense(inputs, dim):
+def dense(dim):
+    inputs = keras.Input(dim)
     x = inputs
-    for i in range(5):
-        x = keras.layers.Dense(1000, activation=tf.nn.relu)(x)
-    x = keras.layers.Dense(dim, activation=tf.nn.relu)(x)
-    return x
+    for _ in range(5):
+        x = keras.layers.Dense(1000, activation='relu')(x)
+    x = keras.layers.Dense(dim, activation='relu')(x)
+    return keras.Model(inputs, x)
 
 class CoupleLayer(keras.layers.Layer):
     def __init__(self, isInverse = False):
         super(CoupleLayer, self).__init__()
         self.isInverse = isInverse
+  
+    def build(self, input_shape):
+        dim = int(input_shape[-1] / 2)
+        self.dense = dense(dim)
 
     def call(self, inputs):
-        latent_dim, hidden_dim = inputs.shape[-1], inputs.shape[-1] // 2
         x_1, x_2 = split(inputs)
 
-        mx1 = dense(x_1, hidden_dim)
-
-        if self.isInverse:
-            x_2 = x_2 - mx1
-        else:
-            x_2 = x_2 + mx1
+        mx1 = self.dense(x_1)
+        
+        x_2 = x_2 + mx1 if not self.isInverse else x_2 - mx1
 
         x = concat([x_1, x_2])
+        
         return x
 
     def inverse(self):
