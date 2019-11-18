@@ -1,93 +1,89 @@
 import tensorflow as tf
 import numpy as np
+import imageio
 import os
-from layers import additiveCoupleLayer, multiplicativeCoupleLayer
-
-class NICE():
-    def __init__(self, input_dim):
-        self.input_dim = input_dim
-
-        self.layer_1 = additiveCoupleLayer()
-        self.layer_2 = additiveCoupleLayer() 
-        self.layer_3 = additiveCoupleLayer()
-        self.layer_4 = additiveCoupleLayer()
-        self.diag = tf.Variable(tf.ones(input_dim), name = 'diag')
-
-    def encoder(self, x):
-        x = self.layer_1.forward(x, self.input_dim, name = 'en_f_1')
-        x = self.layer_2.forward(x, self.input_dim, name = 'en_f_2')
-        x = self.layer_3.forward(x, self.input_dim, name = 'en_f_3')
-        x = self.layer_4.forward(x, self.input_dim, name = 'en_f_4')
-        x = tf.matmul(x, tf.diag(tf.exp(self.diag)))
-
-        return x
-
-    def decoder(self, x):
-        x = tf.matmul(x, tf.diag(tf.reciprocal(tf.exp(self.diag))))
-        x = self.layer_4.inverse(x, self.input_dim, name = 'en_b_1')
-        x = self.layer_3.inverse(x, self.input_dim, name = 'en_b_1')
-        x = self.layer_2.inverse(x, self.input_dim, name = 'en_b_1')
-        x = self.layer_1.inverse(x, self.input_dim, name = 'en_b_1')
-
-        return x
-
-######################  Tensorflow 2.x ######################
-from tensorflow import keras
-from layers import CoupleLayer, ScaleLayer
+from layers import NICEBlock, ScaleLayer
 
 def m_loss(x, diag):
     return -(tf.reduce_sum(diag) - tf.reduce_sum(tf.math.log1p(tf.exp(x)) + tf.math.log1p(tf.exp(-x)), axis = 1))
     
-class NICEModel(keras.models.Model):
-    def __init__(self):
-        super(NICEModel, self).__init__()
-        self.couple_1 = CoupleLayer()
-        self.couple_2 = CoupleLayer()
-        self.couple_3 = CoupleLayer()
-        self.couple_4 = CoupleLayer()
-        self.scale = ScaleLayer()
+class NICEModel(object):
+    def __init__(self, dim):
+        self.block_1 = NICEBlock()
+        self.block_2 = NICEBlock()
+        self.block_3 = NICEBlock()
+        self.block_4 = NICEBlock()
+        self.scale_1 = ScaleLayer()
 
-    def call(self, inputs):
-        x = self.couple_1(inputs)
-        x = self.couple_2(x)
-        x = self.couple_3(x)
-        x = self.couple_4(x)
-        x, diag = self.scale(x)
-        return x, diag
+        self.inputs = tf.keras.Input(shape = dim)
+
+    def encoder(self):
+        x = self.block_1(self.inputs)
+        x = self.block_2(x)
+        x = self.block_3(x)
+        x = self.block_4(x)
+        x = self.scale_1(x)
+        return tf.keras.Model(self.inputs, x)
         
-    def inverse(self):
-        x = self.scale.inverse()(inputs)
-        x = self.couple_4.inverse()(x)
-        x = self.couple_3.inverse()(x)
-        x = self.couple_2.inverse()(x)
-        x = self.couple_1.inverse()(x)
-        return x
+    def decoder(self):
+        x = self.scale_1.inverse()(self.inputs)
+        x = self.block_4.inverse()(x)
+        x = self.block_3.inverse()(x)
+        x = self.block_2.inverse()(x)
+        x = self.block_1.inverse()(x)
+        return tf.keras.Model(self.inputs, x)
 
-def model(args, dataset):
+def model(args, dataset, dim):
     
-    nice = NICEModel()
+    nice = NICEModel(dim)
     
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+    opt = tf.keras.optimizers.Adam(learning_rate=1e-3)
 
-    loss_metric = tf.keras.metrics.Mean()
+    encoder = nice.encoder()
+
+    ckpt = tf.train.Checkpoint(step = tf.Variable(1), optimizer = opt, net = encoder)
+    manager = tf.train.CheckpointManager(ckpt, './tf_ckpts', max_to_keep=3)
 
     for epoch in range(args.epochs):
-        print('Start of epoch %d' % (epoch,))
+        print('Start of epoch %d' % (epoch))
+        ckpt.restore(manager.latest_checkpoint)
+        if manager.latest_checkpoint:
+            print("Restored from {}".format(manager.latest_checkpoint))
+        else:
+            print("Initializing from scratch.")
 
         for step, images in enumerate(dataset):
             with tf.GradientTape() as tape:
-                prediction, diag = nice(images)
-                loss = m_loss(prediction, diag)
+                prediction = encoder(images)
+                loss = tf.reduce_mean(tf.keras.backend.sum(0.5 * prediction ** 2, 1))
             
-            grads = tape.gradient(loss, nice.trainable_weights)
-            optimizer.apply_gradients(zip(grads, nice.trainable_weights))        
+            grads = tape.gradient(loss, encoder.trainable_weights)
+            opt.apply_gradients(zip(grads, encoder.trainable_weights))        
             
-            loss_metric(loss)
-            if step % 100 == 0:
-                print('step %s: loss = %s' % (step, loss_metric.result()))
+            ckpt.step.assign_add(1)
+            if int(ckpt.step) % 100 == 0:
+                save_path = manager.save()
+                print("Saved checkpoint for step {}: {}".format(int(ckpt.step), save_path))
+                print("loss: {:1.2f}".format(loss.numpy()))
+            
+                decoder = nice.decoder()
+
+                n = 10
+                digit_size = 28
+                figure = np.zeros((digit_size * n, digit_size * n))
+
+                for i in range(n):
+                    for j in range(n):
+                        z_sample = np.array(np.random.randn(1, dim)) * 0.75
+                        x_decoded = decoder.predict(z_sample)
+                        digit = x_decoded[0].reshape(digit_size, digit_size)
+                        figure[i * digit_size: (i + 1) * digit_size,
+                            j * digit_size: (j + 1) * digit_size] = digit
+
+                figure = np.clip(figure * 255, 0, 255)
+                imageio.imwrite('test.png', figure)
 
 
 
-    
 
 

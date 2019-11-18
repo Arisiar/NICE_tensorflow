@@ -58,17 +58,14 @@ def minst(batch, size = 28):
     return dataset
 
 def train(args):
-    if not os.path.exists(args.save_path):
-	    os.mkdir(args.save_path)
-
     dataset = minst(args.batch)
 
-    m = model(args, dataset)
+    m = model(args, dataset, dim = 784)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # config
-    parser.add_argument("--epochs", dest = 'epochs', default = 100, type = int,
+    parser.add_argument("--epochs", dest = 'epochs', default = 1, type = int,
                             help = "Number of epochs to train on. [100]")
     parser.add_argument("--save_epochs", dest = 'save_epochs', default = 10, type = int,
                             help = "Number of epochs to save. [10]")
