@@ -1,55 +1,95 @@
 import tensorflow as tf
+import numpy as np
 
-def network(latent_dim, hidden_dim, num_layers = 5):
+def network(hidden_dim, num_layers = 5):
     inputs = tf.keras.Input(hidden_dim)
     x = inputs
     for _ in range(num_layers):
-        x = tf.keras.layers.Dense(hidden_dim, activation='relu')(x)
+        x = tf.keras.layers.Dense(1000, activation='relu')(x)
     x = tf.keras.layers.Dense(hidden_dim, activation='relu')(x)
     return tf.keras.Model(inputs, x)
 
 class NICEBlock(tf.keras.layers.Layer):
-    def __init__(self, is_inverse = False):
+    def __init__(self):
         super(NICEBlock, self).__init__()
-        self.is_inverse = is_inverse
-  
+        self.network = network
     def build(self, input_shape):
-        self.network = network(int(input_shape[-1]), int(input_shape[-1] / 2))
+        self.network = network(int(input_shape[-1] / 2))
 
-    def call(self, inputs):
+    def call(self, inputs, is_inverse = False):
+
         x = tf.reshape(inputs, [-1, int(inputs.shape[-1] / 2), 2])
         x_1, x_2 = x[:,:,0], x[:,:,1]
         
         mx1 = self.network(x_1)
         
-        x_2 = x_2 - mx1 if self.is_inverse else x_2 + mx1
+        x_2 = x_2 - mx1 if is_inverse else x_2 + mx1
 
-        x = tf.concat([x_2, x_1], axis = 1)
+        x = tf.concat([x_1, x_2], axis = 1)
     
         return x
 
-    def inverse(self):
-        return NICEBlock(True)
-
-class ScaleLayer(tf.keras.layers.Layer):
-    def __init__(self, is_inverse = False):
-        super(ScaleLayer, self).__init__()
-        self.is_inverse = is_inverse
-
-    def build(self, input_shape):
-        self.diag = self.add_weight(name = 'diag',
-                shape = (1, input_shape[1]),
-                initializer = 'random_normal', 
-                trainable = True)
+class Shuffle(tf.keras.layers.Layer):
+    def __init__(self, idxs=None, **kwargs):
+        super(Shuffle, self).__init__(**kwargs)
+        self.idxs = idxs
 
     def call(self, inputs):
-        if self.is_inverse:
-            return inputs * tf.exp(-self.diag)
-            # return tf.matmul(inputs, tf.linalg.diag(tf.math.reciprocal(tf.exp(-self.diag))))
-        else:
-            self.add_loss(-tf.keras.backend.sum(self.diag))
-            return inputs * tf.exp(self.diag)
-            # return tf.matmul(inputs, tf.linalg.diag(tf.exp(self.diag)))
+        v_dim = inputs.shape[-1]
+        if self.idxs == None:
+            self.idxs = list(range(v_dim))[::-1]
+        inputs = tf.transpose(inputs)
+        outputs = tf.gather(inputs, self.idxs)
+        outputs = tf.transpose(outputs)
+        return outputs
 
     def inverse(self):
-        return ScaleLayer(True)
+        v_dim = len(self.idxs)
+        _ = sorted(zip(range(v_dim), self.idxs), key=lambda s: s[1])
+        reverse_idxs = [i[0] for i in _]
+        return Shuffle(reverse_idxs)
+
+class SplitVector(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(SplitVector, self).__init__(**kwargs)
+    def call(self, inputs):
+        v_dim = inputs.shape[-1]
+        inputs = tf.reshape(inputs, (-1, v_dim//2, 2))
+        return [inputs[:,:,0], inputs[:,:,1]]
+    def compute_output_shape(self, input_shape):
+        v_dim = input_shape[-1]
+        return [(None, v_dim//2), (None, v_dim//2)]
+    def inverse(self):
+        layer = ConcatVector()
+        return layer
+
+class ConcatVector(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ConcatVector, self).__init__(**kwargs)
+    def call(self, inputs):
+        inputs = [tf.expand_dims(i, 2) for i in inputs]
+        inputs = tf.concat(inputs, 2)
+        return tf.reshape(inputs, (-1, np.prod(inputs.shape[1:])))
+    def compute_output_shape(self, input_shape):
+        return (None, sum([i[-1] for i in input_shape]))
+    def inverse(self):
+        layer = SplitVector()
+        return layer
+
+class AddCouple(tf.keras.layers.Layer):
+    """加性耦合层
+    """
+    def __init__(self, isinverse=False, **kwargs):
+        self.isinverse = isinverse
+        super(AddCouple, self).__init__(**kwargs)
+    def call(self, inputs):
+        part1, part2, mpart1 = inputs
+        if self.isinverse:
+            return [part1, part2 + mpart1] # 逆为加
+        else:
+            return [part1, part2 - mpart1] # 正为减
+    def compute_output_shape(self, input_shape):
+        return [input_shape[0], input_shape[1]]
+    def inverse(self):
+        layer = AddCouple(True)
+        return layer

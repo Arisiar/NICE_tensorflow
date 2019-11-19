@@ -65,12 +65,12 @@ def train(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # config
-    parser.add_argument("--epochs", dest = 'epochs', default = 1, type = int,
+    parser.add_argument("--epochs", dest = 'epochs', default = 30, type = int,
                             help = "Number of epochs to train on. [100]")
     parser.add_argument("--save_epochs", dest = 'save_epochs', default = 10, type = int,
                             help = "Number of epochs to save. [10]")
-    parser.add_argument("--batch", dest = 'batch', default = 30, type = int,
-                            help = "Size of batch to train on. [30]")
+    parser.add_argument("--batch", dest = 'batch', default = 128, type = int,
+                            help = "Size of batch to train on. [128]")
     parser.add_argument("--step", dest = 'step', default = 5, type = int,
                             help = "Step per epoch. [5]") 
     parser.add_argument("--save_path", dest = 'save_path', default = './checkpoint',
@@ -81,6 +81,8 @@ if __name__ == '__main__':
                             help = "Beta 1 for ADAM optimizer. [0.9]") 
     parser.add_argument("--beta2", dest = 'beta2', default = 0.01, type = float,
                             help = "Beta 2 for ADAM optimizer. [0.01]") 
+    parser.add_argument("--epsilon", dest = 'epsilon', default = 1e-04, type = float,
+                            help = "epsilon for ADAM optimizer. [0.01]") 
     args = parser.parse_args() 
 
     train(args)                      
