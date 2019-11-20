@@ -1,33 +1,50 @@
 import tensorflow as tf
 import numpy as np
 
-def network(hidden_dim, num_layers = 5):
-    inputs = tf.keras.Input(hidden_dim)
-    x = inputs
-    for _ in range(num_layers):
-        x = tf.keras.layers.Dense(1000, activation='relu')(x)
-    x = tf.keras.layers.Dense(hidden_dim, activation='relu')(x)
-    return tf.keras.Model(inputs, x)
-
 class NICEBlock(tf.keras.layers.Layer):
     def __init__(self):
         super(NICEBlock, self).__init__()
-        self.network = network
+        self.dense = tf.keras.Sequential([
+            tf.keras.Sequential([tf.keras.layers.Dense(1000, activation='relu') for _ in range(5)]),
+            tf.keras.Sequential([tf.keras.layers.Dense(392, activation='relu')])
+        ])
+
     def build(self, input_shape):
-        self.network = network(int(input_shape[-1] / 2))
+        self.idxs = list(range(input_shape[-1]))[::-1]
 
-    def call(self, inputs, is_inverse = False):
+    def call(self, inputs):
+        x = inputs
+        x = tf.transpose(tf.gather(tf.transpose(x), self.idxs))
+        x_1, x_2 = spilt(x)
 
-        x = tf.reshape(inputs, [-1, int(inputs.shape[-1] / 2), 2])
-        x_1, x_2 = x[:,:,0], x[:,:,1]
+        mx1 = self.dense(x_1)
         
-        mx1 = self.network(x_1)
-        
-        x_2 = x_2 - mx1 if is_inverse else x_2 + mx1
-
-        x = tf.concat([x_1, x_2], axis = 1)
-    
+        x_2 = x_2 + mx1
+        x = concat([x_1, x_2])
         return x
+
+    def inverse(self, inputs):
+        x = inputs
+        x_1, x_2 = spilt(x)
+
+        mx1 = self.dense(x_1)
+
+        x_2 = x_2 - mx1
+        x = concat([x_1, x_2])
+        x = tf.transpose(tf.gather(tf.transpose(x), self.idxs))
+        return x
+
+def spilt(x):
+    dim = x.shape[-1]
+    x = tf.reshape(x, [-1, int(dim / 2), 2])
+    x_1, x_2 = x[:,:,0], x[:,:,1]
+    return x_1, x_2
+
+def concat(x):
+    x = [tf.expand_dims(i, 2) for i in x]
+    x = tf.concat(x, axis = 2)
+    x = tf.reshape(x, (-1, np.prod(x.shape[1:])))
+    return x
 
 class Shuffle(tf.keras.layers.Layer):
     def __init__(self, idxs=None, **kwargs):
@@ -68,7 +85,8 @@ class ConcatVector(tf.keras.layers.Layer):
         super(ConcatVector, self).__init__(**kwargs)
     def call(self, inputs):
         inputs = [tf.expand_dims(i, 2) for i in inputs]
-        inputs = tf.concat(inputs, 2)
+        inputs = tf.concat(inputs, 1)
+        # return inputs
         return tf.reshape(inputs, (-1, np.prod(inputs.shape[1:])))
     def compute_output_shape(self, input_shape):
         return (None, sum([i[-1] for i in input_shape]))

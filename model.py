@@ -20,104 +20,104 @@ class NICEModel(tf.keras.Model):
         self.block_3 = NICEBlock()
         self.block_4 = NICEBlock()
         
-        self.shuffle1 = Shuffle()
-        self.shuffle2 = Shuffle()
-        self.shuffle3 = Shuffle()
-        self.shuffle4 = Shuffle()
+        # self.shuffle1 = Shuffle()
+        # self.shuffle2 = Shuffle()
+        # self.shuffle3 = Shuffle()
+        # self.shuffle4 = Shuffle()
         
-        self.split = SplitVector()
-        self.couple = AddCouple()
-        self.concat = ConcatVector()
+        # self.split = SplitVector()
+        # self.couple = AddCouple()
+        # self.concat = ConcatVector()
 
-        self.network1 = network()
-        self.network2 = network()
-        self.network3 = network()
-        self.network4 = network()
-        # self.noise_1 = tf.keras.layers.Lambda(
-        #     lambda s: tf.keras.backend.in_train_phase(s - 0.01 * tf.random.uniform(tf.shape(s)), s)) 
+        # self.network1 = network()
+        # self.network2 = network()
+        # self.network3 = network()
+        # self.network4 = network()
+        self.noise_1 = tf.keras.layers.Lambda(
+            lambda s: tf.keras.backend.in_train_phase(s - 0.01 * tf.random.uniform(tf.shape(s)), s)) 
 
     def build(self, input_shape):
-        self.diag = self.add_weight(name = 'diag',
-                                shape = [input_shape[-1]],
-                                initializer= 'glorot_normal', 
-                                trainable = True)
+        self.diag = tf.Variable(tf.random.normal([input_shape[-1]]), trainable = True, name = 'diag')
 
     def call(self, inputs):
-        # x = self.noise_1(inputs)
-        # x = self.block_1(x)
-        # x = self.block_2(x)
-        # x = self.block_3(x)
-        # x = self.block_4(x)
+        x = inputs
+        x = self.noise_1(x)
+        x = self.block_1(x)
+        x = self.block_2(x)
+        x = self.block_3(x)
+        x = self.block_4(x)
         
-        x = self.shuffle1(inputs)
-        x1,x2 = self.split(x)
-        mx1 = self.network1(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2])    
+        # x = self.shuffle1(x)
+        
+        # x1,x2 = self.split(x)
+        # mx1 = self.network1(x1)
+        # x1, x2 = self.couple([x1, x2, mx1])
+        # x = self.concat([x1, x2])
+        
+        # x = self.shuffle2(inputs)
+        # x1,x2 = self.split(x)
+        # mx1 = self.network2(x1)
+        # x1, x2 = self.couple([x1, x2, mx1])
+        # x = self.concat([x1, x2]) 
 
-        x = self.shuffle2(inputs)
-        x1,x2 = self.split(x)
-        mx1 = self.network2(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2]) 
+        # x = self.shuffle3(inputs)
+        # x1,x2 = self.split(x)
+        # mx1 = self.network3(x1)
+        # x1, x2 = self.couple([x1, x2, mx1])
+        # x = self.concat([x1, x2]) 
 
-        x = self.shuffle3(inputs)
-        x1,x2 = self.split(x)
-        mx1 = self.network3(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2]) 
-
-        x = self.shuffle4(inputs)
-        x1,x2 = self.split(x)
-        mx1 = self.network4(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2])    
-
+        # x = self.shuffle4(inputs)
+        # x1,x2 = self.split(x)
+        # mx1 = self.network4(x1)
+        # x1, x2 = self.couple([x1, x2, mx1])
+        # x = self.concat([x1, x2])    
+        
         x = tf.matmul(x, tf.linalg.diag(tf.exp(self.diag)))
 
         return x
         
     def inverse(self, inputs):
-        x = tf.matmul(inputs, tf.linalg.diag(tf.math.reciprocal(tf.exp(-self.diag))))
+        x = inputs
+        x = tf.matmul(x, tf.linalg.diag(tf.math.reciprocal(tf.exp(-self.diag))))
+        x = self.block_4.inverse(x)
+        x = self.block_3.inverse(x)
+        x = self.block_2.inverse(x)
+        x = self.block_1.inverse(x)
 
-        x1,x2 = self.concat.inverse()(x)
-        mx1 = self.network4(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.shuffle4.inverse()(x)    
+        # x1,x2 = self.concat.inverse()(x)
+        # mx1 = self.network4(x1)
+        # x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        # x = self.split.inverse()([x1, x2])
+        # x = self.shuffle4.inverse()(x)    
 
-        x1,x2 = self.concat.inverse()(x)
-        mx1 = self.network3(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.shuffle3.inverse()(x)  
+        # x1,x2 = self.concat.inverse()(x)
+        # mx1 = self.network3(x1)
+        # x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        # x = self.split.inverse()([x1, x2])
+        # x = self.shuffle3.inverse()(x)  
 
-        x1,x2 = self.concat.inverse()(x)
-        mx1 = self.network2(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.shuffle2.inverse()(x)  
+        # x1,x2 = self.concat.inverse()(x)
+        # mx1 = self.network2(x1)
+        # x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        # x = self.split.inverse()([x1, x2])
+        # x = self.shuffle2.inverse()(x)  
 
-        x1,x2 = self.concat.inverse()(x)
-        mx1 = self.network1(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.shuffle1.inverse()(x)  
-
-        # x = self.block_4(x, True)
-        # x = self.block_3(x, True)
-        # x = self.block_2(x, True)
-        # x = self.block_1(x, True)
+        # x1,x2 = self.concat.inverse()(x)
+        # mx1 = self.network1(x1)
+        # x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        # x = self.split.inverse()([x1, x2])
+        # x = self.shuffle1.inverse()(x)  
 
         return x
 
 def logistic_loss(x, diag):
+    x = tf.clip_by_value(x, 1e-10, 1.0)
     return (tf.reduce_sum(diag) - (tf.reduce_sum(tf.math.log1p(tf.exp(x)) + tf.math.log1p(tf.exp(-x)), axis = 1)))
 
 def model(args, dataset, dim):
     
     nice = NICEModel(dim)
-
+    
     opt = tf.keras.optimizers.Adam(learning_rate = args.lr,
                                 beta_1 = args.beta1, 
                                 beta_2 = args.beta2, 
@@ -133,21 +133,21 @@ def model(args, dataset, dim):
             print("Restored from {}".format(manager.latest_checkpoint))
         else:
             print("Initializing from scratch.")
-
+    
         for step, images in enumerate(dataset):
             with tf.GradientTape() as tape:
                 prediction = nice(images)
                 loss = tf.reduce_mean(-logistic_loss(prediction, nice.diag))
-            
+
             grads = tape.gradient(loss, nice.trainable_weights)
-            opt.apply_gradients(zip(grads, nice.trainable_weights))        
+            opt.apply_gradients(zip(grads, nice.trainable_weights))
 
             ckpt.step.assign_add(1)
             if int(ckpt.step) % 100 == 0:
                 save_path = manager.save()
                 print("Saved checkpoint for step {}: {}".format(int(ckpt.step), save_path))
                 print("loss: {:1.2f}".format(loss.numpy()))
-            
+                
                 n = 10
                 digit_size = 28
                 figure = np.zeros((digit_size * n, digit_size * n))
@@ -162,7 +162,7 @@ def model(args, dataset, dim):
 
                 figure = np.clip(figure * 255, 0, 255)
                 imageio.imwrite('test.png', figure)
-
+                
 
 
 
