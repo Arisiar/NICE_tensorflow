@@ -4,36 +4,139 @@ import imageio
 import os
 from layers import NICEBlock
 
-def network(hidden_dim = 392, num_layers = 5):
-    inputs = tf.keras.Input(hidden_dim)
-    x = inputs
-    for _ in range(num_layers):
-        x = tf.keras.layers.Dense(1000, activation='relu')(x)
-    x = tf.keras.layers.Dense(hidden_dim, activation='relu')(x)
-    return tf.keras.Model(inputs, x)
+class Shuffle(tf.keras.layers.Layer):
+    def __init__(self, idxs=None, mode='reverse', **kwargs):
+        super(Shuffle, self).__init__(**kwargs)
+        self.idxs = idxs
+        self.mode = mode
+    def call(self, inputs):
+        v_dim = inputs.shape[-1]
+        if self.idxs == None:
+            self.idxs = list(range(v_dim))
+            if self.mode == 'reverse':
+                self.idxs = self.idxs[::-1]
+            elif self.mode == 'random':
+                np.random.shuffle(self.idxs)
+        inputs = tf.transpose(inputs)
+        outputs = tf.gather(inputs, self.idxs)
+        outputs = tf.transpose(outputs)
+        return outputs
+    def inverse(self):
+        v_dim = len(self.idxs)
+        _ = sorted(zip(range(v_dim), self.idxs), key=lambda s: s[1])
+        reverse_idxs = [i[0] for i in _]
+        return Shuffle(reverse_idxs)
+
+class SplitVector(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(SplitVector, self).__init__(**kwargs)
+    def call(self, inputs):
+        v_dim = inputs.shape[-1]
+        inputs = tf.reshape(inputs, (-1, v_dim//2, 2))
+        return [inputs[:,:,0], inputs[:,:,1]]
+    def compute_output_shape(self, input_shape):
+        v_dim = input_shape[-1]
+        return [(None, v_dim//2), (None, v_dim//2)]
+    def inverse(self):
+        layer = ConcatVector()
+        return layer
+
+class ConcatVector(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(ConcatVector, self).__init__(**kwargs)
+    def call(self, inputs):
+        inputs = [tf.expand_dims(i, 2) for i in inputs]
+        inputs = tf.concat(inputs, 2)
+        return tf.reshape(inputs, (-1, np.prod(inputs.shape[1:])))
+    def compute_output_shape(self, input_shape):
+        return (None, sum([i[-1] for i in input_shape]))
+    def inverse(self):
+        layer = SplitVector()
+        return layer
+
+class AddCouple(tf.keras.layers.Layer):
+    def __init__(self, isinverse=False, **kwargs):
+        self.isinverse = isinverse
+        super(AddCouple, self).__init__(**kwargs)
+    def call(self, inputs):
+        part1, part2, mpart1 = inputs
+        if self.isinverse:
+            return [part1, part2 - mpart1] # 逆为加
+        else:
+            return [part1, part2 + mpart1] # 正为减
+    def compute_output_shape(self, input_shape):
+        return [input_shape[0], input_shape[1]]
+    def inverse(self):
+        layer = AddCouple(True)
+        return layer
+
+def build_basic_model(v_dim = 392):
+    _in = tf.keras.Input(shape=(v_dim,))
+    _ = _in
+    for i in range(5):
+        _ = tf.keras.layers.Dense(1000, activation='relu')(_)
+    _ = tf.keras.layers.Dense(v_dim, activation='relu')(_)
+    return tf.keras.Model(_in, _)
 
 class NICEModel(tf.keras.Model):
     def __init__(self):
         super(NICEModel, self).__init__()
-        self.block_1 = NICEBlock()
-        self.block_2 = NICEBlock()
-        self.block_3 = NICEBlock()
-        self.block_4 = NICEBlock()
+        # self.block_1 = NICEBlock()
+        # self.block_2 = NICEBlock()
+        # self.block_3 = NICEBlock()
+        # self.block_4 = NICEBlock()
         
-        self.noise_1 = tf.keras.layers.Lambda(
-            lambda s: tf.keras.backend.in_train_phase(s - 0.01 * tf.random.uniform(tf.shape(s)), s)) 
+        self.noise_1 = tf.keras.layers.Lambda(lambda s: tf.keras.backend.in_train_phase(s - 0.01 * tf.random.uniform(tf.shape(s)), s)) 
+
+        self.sh1 = Shuffle()
+        self.sh2 = Shuffle()
+        self.sh3 = Shuffle()
+        self.sh4 = Shuffle()
+
+        self.split = SplitVector()
+        self.concat = ConcatVector()
+        self.couple = AddCouple()
+
+        self.m1 = build_basic_model()
+        self.m2 = build_basic_model()
+        self.m3 = build_basic_model()
+        self.m4 = build_basic_model()
 
     def build(self, input_shape):
-        self.diag = tf.Variable(tf.initializers.glorot_normal()(shape = [1, input_shape[1]]), 
-                        trainable = True, name = 'diag')
+        self.diag = tf.Variable(tf.initializers.glorot_normal()(shape = [1, input_shape[1]]), trainable = True, name = 'diag')
 
     def call(self, inputs):
         x = inputs
         x = self.noise_1(x)
-        x = self.block_1(x)
-        x = self.block_2(x)
-        x = self.block_3(x)
-        x = self.block_4(x)
+        # x = self.block_1(x)
+        # x = self.block_2(x)
+        # x = self.block_3(x)
+        # x = self.block_4(x)
+
+        x = self.sh1(x)
+        x1, x2 = self.split(x)
+        mx1 = self.m1(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2])
+    
+        x = self.sh2(x)
+        x1, x2 = self.split(x)
+        mx1 = self.m2(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2])
+
+        x = self.sh3(x)
+        x1, x2 = self.split(x)
+        mx1 = self.m3(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2])
+
+        x = self.sh4(x)
+        x1, x2 = self.split(x)
+        mx1 = self.m4(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2]) 
+
         x = x * tf.exp(self.diag)
         
         return x
@@ -41,10 +144,35 @@ class NICEModel(tf.keras.Model):
     def inverse(self, inputs):
         x = inputs
         x = x * tf.exp(-self.diag)
-        x = self.block_4.inverse(x)
-        x = self.block_3.inverse(x)
-        x = self.block_2.inverse(x)
-        x = self.block_1.inverse(x)
+
+        x1, x2 = self.concat.inverse()(x)
+        mx1 = self.m4(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.sh4.inverse()(x)
+
+        x1, x2 = self.concat.inverse()(x)
+        mx1 = self.m3(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.sh3.inverse()(x)
+
+        x1, x2 = self.concat.inverse()(x)
+        mx1 = self.m2(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.sh2.inverse()(x)
+
+        x1, x2 = self.concat.inverse()(x)
+        mx1 = self.m1(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.sh1.inverse()(x)
+
+        # x = self.block_4.inverse(x)
+        # x = self.block_3.inverse(x)
+        # x = self.block_2.inverse(x)
+        # x = self.block_1.inverse(x)
 
         return x
 
