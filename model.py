@@ -5,7 +5,7 @@ import os
 from layers import NICEBlock
 
 class Shuffle(tf.keras.layers.Layer):
-    def __init__(self, idxs=None, mode='reverse', **kwargs):
+    def __init__(self, idxs = None, mode = 'reverse', **kwargs):
         super(Shuffle, self).__init__(**kwargs)
         self.idxs = idxs
         self.mode = mode
@@ -46,7 +46,7 @@ class ConcatVector(tf.keras.layers.Layer):
         super(ConcatVector, self).__init__(**kwargs)
     def call(self, inputs):
         inputs = [tf.expand_dims(i, 2) for i in inputs]
-        inputs = tf.concat(inputs, 2)
+        inputs = tf.concat(inputs, axis = 2)
         return tf.reshape(inputs, (-1, np.prod(inputs.shape[1:])))
     def compute_output_shape(self, input_shape):
         return (None, sum([i[-1] for i in input_shape]))
@@ -61,16 +61,33 @@ class AddCouple(tf.keras.layers.Layer):
     def call(self, inputs):
         part1, part2, mpart1 = inputs
         if self.isinverse:
-            return [part1, part2 - mpart1] # 逆为加
+            return [part1, part2 + mpart1] # 逆为加
         else:
-            return [part1, part2 + mpart1] # 正为减
+            return [part1, part2 - mpart1] # 正为减
     def compute_output_shape(self, input_shape):
         return [input_shape[0], input_shape[1]]
     def inverse(self):
         layer = AddCouple(True)
         return layer
 
-def build_basic_model(v_dim = 392):
+class Scale(tf.keras.layers.Layer):
+    """尺度变换层
+    """
+    def __init__(self, **kwargs):
+        super(Scale, self).__init__(**kwargs)
+    def build(self, input_shape):
+        self.kernel = self.add_weight(name='kernel', 
+                                      shape=(1, input_shape[1]),
+                                      initializer='glorot_normal',
+                                      trainable=True)
+    def call(self, inputs):
+        self.add_loss(-tf.reduce_sum(self.kernel)) # 对数行列式
+        return tf.math.exp(self.kernel) * inputs
+    def inverse(self):
+        scale = tf.math.exp(-self.kernel)
+        return tf.keras.layers.Lambda(lambda x: scale * x)
+
+def build_basic_model(v_dim):
     _in = tf.keras.Input(shape=(v_dim,))
     _ = _in
     for i in range(5):
@@ -78,162 +95,218 @@ def build_basic_model(v_dim = 392):
     _ = tf.keras.layers.Dense(v_dim, activation='relu')(_)
     return tf.keras.Model(_in, _)
 
+shuffle1 = Shuffle()
+shuffle2 = Shuffle()
+shuffle3 = Shuffle()
+shuffle4 = Shuffle()
+
+split = SplitVector()
+couple = AddCouple()
+concat = ConcatVector()
+scale = Scale()
+
+basic_model_1 = build_basic_model(392)
+basic_model_2 = build_basic_model(392)
+basic_model_3 = build_basic_model(392)
+basic_model_4 = build_basic_model(392)
+
+def keras_model():
+    x_in = tf.keras.Input(shape=(784,))
+    x = x_in
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_1(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_2(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_3(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_4(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = scale(x)
+
+    return tf.keras.Model(x_in, x)
 class NICEModel(tf.keras.Model):
-    def __init__(self):
-        super(NICEModel, self).__init__()
-        # self.block_1 = NICEBlock()
-        # self.block_2 = NICEBlock()
-        # self.block_3 = NICEBlock()
-        # self.block_4 = NICEBlock()
-        
-        self.noise_1 = tf.keras.layers.Lambda(lambda s: tf.keras.backend.in_train_phase(s - 0.01 * tf.random.uniform(tf.shape(s)), s)) 
+    def __init__(self, inverse = False, **kwargs):
+        super(NICEModel, self).__init__(**kwargs)
+        self.inverse = inverse
 
-        self.sh1 = Shuffle()
-        self.sh2 = Shuffle()
-        self.sh3 = Shuffle()
-        self.sh4 = Shuffle()
+        self.block_1 = NICEBlock()
+        self.block_2 = NICEBlock()
+        self.block_3 = NICEBlock()
+        self.block_4 = NICEBlock()
 
-        self.split = SplitVector()
-        self.concat = ConcatVector()
-        self.couple = AddCouple()
-
-        self.m1 = build_basic_model()
-        self.m2 = build_basic_model()
-        self.m3 = build_basic_model()
-        self.m4 = build_basic_model()
-
-    def build(self, input_shape):
-        self.diag = tf.Variable(tf.initializers.glorot_normal()(shape = [1, input_shape[1]]), trainable = True, name = 'diag')
+        self.diag = tf.Variable(tf.initializers.glorot_normal()(shape = [1, 784]), trainable = True)
 
     def call(self, inputs):
         x = inputs
-        x = self.noise_1(x)
-        # x = self.block_1(x)
-        # x = self.block_2(x)
-        # x = self.block_3(x)
-        # x = self.block_4(x)
-
-        x = self.sh1(x)
-        x1, x2 = self.split(x)
-        mx1 = self.m1(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2])
+        if self.inverse:
+            x = x * tf.exp(-self.diag)
+            x = self.block_4.inverse(x)
+            x = self.block_3.inverse(x)
+            x = self.block_2.inverse(x)
+            x = self.block_1.inverse(x)
+        else:
+            x = self.block_1(x)
+            x = self.block_2(x)
+            x = self.block_3(x)
+            x = self.block_4(x)
+            x = x * tf.exp(self.diag)
+            self.add_loss(-tf.reduce_sum(self.diag))
+        return x
     
-        x = self.sh2(x)
-        x1, x2 = self.split(x)
-        mx1 = self.m2(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2])
+    def get_diag(self):
+        return tf.reduce_mean(self.diag)
 
-        x = self.sh3(x)
-        x1, x2 = self.split(x)
-        mx1 = self.m3(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2])
-
-        x = self.sh4(x)
-        x1, x2 = self.split(x)
-        mx1 = self.m4(x1)
-        x1, x2 = self.couple([x1, x2, mx1])
-        x = self.concat([x1, x2]) 
-
-        x = x * tf.exp(self.diag)
-        
-        return x
-        
-    def inverse(self, inputs):
-        x = inputs
-        x = x * tf.exp(-self.diag)
-
-        x1, x2 = self.concat.inverse()(x)
-        mx1 = self.m4(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.sh4.inverse()(x)
-
-        x1, x2 = self.concat.inverse()(x)
-        mx1 = self.m3(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.sh3.inverse()(x)
-
-        x1, x2 = self.concat.inverse()(x)
-        mx1 = self.m2(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.sh2.inverse()(x)
-
-        x1, x2 = self.concat.inverse()(x)
-        mx1 = self.m1(x1)
-        x1, x2 = self.couple.inverse()([x1, x2, mx1])
-        x = self.split.inverse()([x1, x2])
-        x = self.sh1.inverse()(x)
-
-        # x = self.block_4.inverse(x)
-        # x = self.block_3.inverse(x)
-        # x = self.block_2.inverse(x)
-        # x = self.block_1.inverse(x)
-
-        return x
-
-def logistic_loss(x, diag):
-    x = tf.clip_by_value(x, 1e-10, 1.0)
-    # return tf.reduce_sum(-tf.math.log1p(tf.exp(x)) - tf.math.log1p(tf.exp(-x)), axis = 1) + tf.reduce_sum(diag)
-    return tf.reduce_sum(-(0.5 * x ** 2), axis = 1) + tf.reduce_sum(diag)
+def logistic_loss(x):
+    # x = tf.clip_by_value(x, 1e-10, 1.0)
+    # return tf.reduce_sum(-tf.math.log1p(tf.exp(x)) - tf.math.log1p(tf.exp(-x)), axis = 1)
+    return tf.reduce_sum((0.5 * x ** 2), axis = 1)
 
 def model(args, dataset, dim):
     
-    nice = NICEModel()
+    # nice = NICEModel()
+    x_in = tf.keras.Input(shape=(784,))
+    x = x_in
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_1(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_2(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_3(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = shuffle1(x)
+    x1,x2 = split(x)
+    mx1 = basic_model_4(x1)
+    x1, x2 = couple([x1, x2, mx1])
+    x = concat([x1, x2])
+
+    x = scale(x)
+
+    nice = tf.keras.Model(x_in, x)
     
-    opt = tf.keras.optimizers.Adam(learning_rate = args.lr,
-                                beta_1 = args.beta1, beta_2 = args.beta2, epsilon = args.epsilon)
-    
+    opt = tf.keras.optimizers.Adam()
     ckpt = tf.train.Checkpoint(step = tf.Variable(1), optimizer = opt, net = nice)
     manager = tf.train.CheckpointManager(ckpt, './tf_ckpts', max_to_keep = 3)
+    
+    @tf.function
+    def train_step(net, inputs, optimizer):
+        with tf.GradientTape() as tape:
+            predictions = net(images)
+            loss = tf.reduce_mean(logistic_loss(predictions))
+        grads = tape.gradient(loss, nice.trainable_weights)
+        optimizer.apply_gradients(zip(grads, nice.trainable_weights))
+        return loss
 
     for epoch in range(args.epochs):
-        print('Start of epoch %d' % (epoch))
-        # ckpt.restore(manager.latest_checkpoint)
-        # if manager.latest_checkpoint:
-        #     print("Restored from {}".format(manager.latest_checkpoint))
-        # else:
-        #     print("Initializing from scratch.")
-    
-        for step, images in enumerate(dataset):
-            with tf.GradientTape() as tape:
-                pred = nice(images)
-                test = nice.inverse(pred)
-                # print(tf.reduce_mean(images))
-                # print(tf.reduce_mean(test))
-                log_loss = -logistic_loss(pred, nice.diag) 
-                loss = tf.reduce_mean(log_loss)
-            grads = tape.gradient(loss, nice.trainable_weights)
-            opt.apply_gradients(zip(grads, nice.trainable_weights))
+        ckpt.restore(manager.latest_checkpoint)
+        if manager.latest_checkpoint:
+            print("Restored from {}".format(manager.latest_checkpoint))
+        else:
+            print("Initializing from scratch.")
 
+        for images in dataset:
+            
+            loss = train_step(nice, images, opt)
             ckpt.step.assign_add(1)
             if int(ckpt.step) % 100 == 0:
-                # save_path = manager.save()
-                # print("Saved checkpoint for step {}: {}".format(int(ckpt.step), save_path))
-                print("loss: {:1.2f}, diag: {:1.2f}, pred: {:1.2f}".format(loss, tf.reduce_sum(nice.diag), tf.reduce_mean(pred)))
-                if tf.reduce_mean(pred) > 1.0:
-                    exit()
-                # if np.isnan(tf.reduce_mean(pred)):
-                #     exit()
-                n = 10
-                digit_size = 28
-                figure = np.zeros((digit_size * n, digit_size * n))
+                save_path = manager.save()
+                print("loss: {:1.2f}".format(loss.numpy()))
 
-                for i in range(n):
-                    for j in range(n):
-                        sample = np.array(np.random.randn(1, dim), dtype = np.float32) * 0.75
-                        x_decoded = nice.inverse(sample).numpy()
-                        digit = x_decoded[0].reshape(digit_size, digit_size)
-                        figure[i * digit_size: (i + 1) * digit_size,
-                            j * digit_size: (j + 1) * digit_size] = digit
+    # ckpt.restore(manager.latest_checkpoint) 
+    x = x_in
+    x = scale.inverse()(x)
 
-                figure = np.clip(figure * 255, 0, 255)
-                imageio.imwrite('test.png', figure)
-                
+    x1,x2 = concat.inverse()(x)
+    mx1 = basic_model_4(x1)
+    x1, x2 = couple.inverse()([x1, x2, mx1])
+    x = split.inverse()([x1, x2])
+    x = shuffle1.inverse()(x)
+
+    x1,x2 = concat.inverse()(x)
+    mx1 = basic_model_3(x1)
+    x1, x2 = couple.inverse()([x1, x2, mx1])
+    x = split.inverse()([x1, x2])
+    x = shuffle1.inverse()(x)
+
+    x1,x2 = concat.inverse()(x)
+    mx1 = basic_model_2(x1)
+    x1, x2 = couple.inverse()([x1, x2, mx1])
+    x = split.inverse()([x1, x2])
+    x = shuffle1.inverse()(x)
+
+    x1,x2 = concat.inverse()(x)
+    mx1 = basic_model_1(x1)
+    x1, x2 = couple.inverse()([x1, x2, mx1])
+    x = split.inverse()([x1, x2])
+    x = shuffle1.inverse()(x)
+
+    decoder = tf.keras.Model(x_in, x)
+    n = 15
+    digit_size = 28
+    figure = np.zeros((digit_size * n, digit_size * n))
+
+    for i in range(n):
+        for j in range(n):
+            z_sample = np.array(np.random.randn(1, 784)) * 0.75 # 标准差取0.75而不是1
+            x_decoded = decoder.predict(z_sample)
+            digit = x_decoded[0].reshape(digit_size, digit_size)
+            figure[i * digit_size: (i + 1) * digit_size,
+                j * digit_size: (j + 1) * digit_size] = digit
+
+
+    figure = np.clip(figure*255, 0, 255)
+    imageio.imwrite('test.png', figure)
+
+    # nice.inverse = True
+
+    # sample = np.array(np.random.randn(1, dim), dtype = np.float32) * 0.75
+    # figure = nice(sample)
+    # figure = np.clip(figure * 255, 0, 255)
+    # imageio.imwrite('test.png', np.reshape(figure, [28, 28]))
+    # imageio.imwrite('noise.png', np.reshape(sample, [28, 28]))
+
+        # n = 10
+        # digit_size = 28
+        # figure = np.zeros((digit_size * n, digit_size * n))
+
+        # for i in range(n):
+        #     for j in range(n):
+        #         sample = np.array(np.random.randn(1, dim), dtype = np.float32) * 0.75
+        #         x_decoded = nice(images).numpy()
+        #         digit = x_decoded[0].reshape(digit_size, digit_size)
+        #         figure[i * digit_size: (i + 1) * digit_size,
+        #             j * digit_size: (j + 1) * digit_size] = digit
+
+        # figure = np.clip(figure * 255, 0, 255)
+        # imageio.imwrite('test.png', figure)
 
 
 

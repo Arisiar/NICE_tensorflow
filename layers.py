@@ -23,9 +23,9 @@ class NICEBlock(tf.keras.layers.Layer):
 
     def inverse(self, inputs):
         x = inputs
-        x1, x2 = self.concat.inverse()(x)
+        x1, x2 = self.split(x)
         x2 = x2 - self.dense(x1)
-        x = self.split.inverse()([x1, x2])
+        x = self.concat([x1, x2])
         x = self.shuffle(x)
         return x
 
@@ -62,11 +62,6 @@ class SplitingLayer(tf.keras.layers.Layer):
         dim = int(inputs.shape[-1] / 2)
         inputs = tf.reshape(inputs, (-1, dim, 2))
         return [inputs[:, :, 0], inputs[:, :, 1]]
-    def compute_output_shape(self, input_shape):
-        v_dim = input_shape[-1]
-        return [(None, v_dim//2), (None, v_dim//2)]
-    def inverse(self):
-        return CombiningLayer()
 
 class CombiningLayer(tf.keras.layers.Layer):
     def __init__(self):
@@ -75,7 +70,3 @@ class CombiningLayer(tf.keras.layers.Layer):
         inputs = [tf.expand_dims(i, 2) for i in inputs]
         inputs = tf.concat(inputs, 2)
         return tf.reshape(inputs, (-1, np.prod(inputs.shape[1:])))
-    def compute_output_shape(self, input_shape):
-        return (None, sum([i[-1] for i in input_shape]))
-    def inverse(self):
-        return SplitingLayer()
