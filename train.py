@@ -9,10 +9,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # tf.compat.v1.disable_eager_execution()
 
-def minst(batch, size = 28):
+def minst(batch, epochs, size = 28):
     def preprocessing_fn(x):
-        noise = 0.01 * tf.random.uniform(x.shape)
-        x = tf.cast((x / 255) - noise, tf.float32) # , tf.cast(y, tf.int64)
+        # noise = 0.01 * tf.random.uniform(x.shape)
+        x = tf.cast((x / 255), tf.float32) # , tf.cast(y, tf.int64)
         x = tf.reshape(x, [size * size]) # , tf.reshape(y, [-1])
         return x
 
@@ -26,14 +26,14 @@ def minst(batch, size = 28):
     return  dataset
 
 def train(args):
-    dataset = minst(args.batch)
+    dataset = minst(args.batch, args.epochs)
 
     m = model(args, dataset, dim = 784)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # config
-    parser.add_argument("--epochs", dest = 'epochs', default = 1, type = int,
+    parser.add_argument("--epochs", dest = 'epochs', default = 2, type = int,
                             help = "Number of epochs to train on. [100]")
     parser.add_argument("--save_epochs", dest = 'save_epochs', default = 10, type = int,
                             help = "Number of epochs to save. [10]")
