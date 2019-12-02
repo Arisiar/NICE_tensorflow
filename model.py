@@ -75,7 +75,12 @@ class Scale(tf.keras.layers.Layer):
     """
     def __init__(self, **kwargs):
         super(Scale, self).__init__(**kwargs)
-        self.kernel = tf.Variable(tf.initializers.glorot_normal()(shape = [1, 784]), trainable = True, name = 'kernel')
+
+    def build(self, input_shape):
+        self.kernel = self.add_weight(name='kernel', 
+                                      shape=(1, input_shape[1]),
+                                      initializer='glorot_normal',
+                                      trainable=True)
     def call(self, inputs):
         self.add_loss(-tf.reduce_sum(self.kernel)) # 对数行列式
         return tf.math.exp(self.kernel) * inputs
@@ -109,7 +114,7 @@ def build_basic_model(v_dim):
 class NICEModel(tf.keras.Model):
     def __init__(self):
         super(NICEModel, self).__init__()
-        self.is_inverse = False
+        # self.kernel = tf.Variable(tf.initializers.glorot_normal()(shape = [1, 784]), trainable = True, name = 'kernel')
         # self.encoder_1 = Encoder(basic_model_1)
         # self.encoder_2 = Encoder(basic_model_2)
         # self.encoder_3 = Encoder(basic_model_3)
@@ -120,7 +125,7 @@ class NICEModel(tf.keras.Model):
         # self.decoder_3 = Encoder(basic_model_2)
         # self.decoder_4 = Encoder(basic_model_1)
         
-        # self.diag = tf.Variable(tf.initializers.glorot_normal()(shape = [1, 784]), trainable = True)
+        self.diag = tf.Variable(tf.initializers.glorot_normal()(shape = [1, 784]), trainable = True)
 
         self.shuffle1 = Shuffle()
         self.shuffle2 = Shuffle()
@@ -136,75 +141,75 @@ class NICEModel(tf.keras.Model):
         self.basic_model_2 = build_basic_model(392)
         self.basic_model_3 = build_basic_model(392)
         self.basic_model_4 = build_basic_model(392)
-        
+
     def call(self, inputs):
         x = inputs
-        x = tf.keras.layers.Lambda(lambda s: tf.keras.backend.in_train_phase(s-0.01*tf.random.uniform(x.shape), s))(x)
-        if not self.is_inverse:
-            x = self.shuffle1(x)
-            x1,x2 = self.split(x)
-            mx1 = self.basic_model_1(x1)
-            x1, x2 = self.couple([x1, x2, mx1])
-            x = self.concat([x1, x2])
+        x = self.shuffle1(x)
+        x1,x2 = self.split(x)
+        mx1 = self.basic_model_1(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2])
 
-            x = self.shuffle2(x)
-            x1,x2 = self.split(x)
-            mx1 = self.basic_model_2(x1)
-            x1, x2 = self.couple([x1, x2, mx1])
-            x = self.concat([x1, x2])
+        x = self.shuffle2(x)
+        x1,x2 = self.split(x)
+        mx1 = self.basic_model_2(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2])
 
-            x = self.shuffle3(x)
-            x1,x2 = self.split(x)
-            mx1 = self.basic_model_3(x1)
-            x1, x2 = self.couple([x1, x2, mx1])
-            x = self.concat([x1, x2])
+        x = self.shuffle3(x)
+        x1,x2 = self.split(x)
+        mx1 = self.basic_model_3(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2])
 
-            x = self.shuffle4(x)
-            x1,x2 = self.split(x)
-            mx1 = self.basic_model_4(x1)
-            x1, x2 = self.couple([x1, x2, mx1])
-            x = self.concat([x1, x2])
-            x = self.scale(x)
-
-            # x = self.encoder_1(x)
-            # x = self.encoder_2(x)
-            # x = self.encoder_3(x)
-            # x = self.encoder_4(x)
-            # self.add_loss(-tf.reduce_sum(self.diag))
-            # x = tf.exp(self.diag) * x  
-        else:
-            x = self.scale.inverse()(x)
-            
-            x1,x2 = self.concat.inverse()(x)
-            mx1 = self.basic_model_4(x1)
-            x1, x2 = self.couple.inverse()([x1, x2, mx1])
-            x = self.split.inverse()([x1, x2])
-            x = self.shuffle4.inverse()(x)
-
-            x1,x2 = self.concat.inverse()(x)
-            mx1 = self.basic_model_3(x1)
-            x1, x2 = self.couple.inverse()([x1, x2, mx1])
-            x = self.split.inverse()([x1, x2])
-            x = self.shuffle3.inverse()(x)
-
-            x1,x2 = self.concat.inverse()(x)
-            mx1 = self.basic_model_2(x1)
-            x1, x2 = self.couple.inverse()([x1, x2, mx1])
-            x = self.split.inverse()([x1, x2])
-            x = self.shuffle2.inverse()(x)
-
-            x1,x2 = self.concat.inverse()(x)
-            mx1 = self.basic_model_1(x1)
-            x1, x2 = self.couple.inverse()([x1, x2, mx1])
-            x = self.split.inverse()([x1, x2])
-            x = self.shuffle1.inverse()(x)
-
-            # x = tf.keras.layers.Lambda(lambda s: tf.exp(-self.diag) * s)(x)
-            # x = self.decoder_1(x)
-            # x = self.decoder_2(x)
-            # x = self.decoder_3(x)
-            # x = self.decoder_4(x)
+        x = self.shuffle4(x)
+        x1,x2 = self.split(x)
+        mx1 = self.basic_model_4(x1)
+        x1, x2 = self.couple([x1, x2, mx1])
+        x = self.concat([x1, x2])
+        # x = self.scale(x)
+        
+        # x = self.encoder_1(x)
+        # x = self.encoder_2(x)
+        # x = self.encoder_3(x)
+        # x = self.encoder_4(x)
+        # self.add_loss(-tf.reduce_sum(self.diag))
+        x = tf.exp(self.diag) * x  
         return x
+    def inverse(self):
+        x_in = tf.keras.Input(shape = (784,))
+        x = tf.keras.layers.Lambda(lambda s: tf.exp(-self.diag) * s)(x)
+        # x = self.scale.inverse()(x_in)
+        
+        x1,x2 = self.concat.inverse()(x)
+        mx1 = self.basic_model_4(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.shuffle4.inverse()(x)
+
+        x1,x2 = self.concat.inverse()(x)
+        mx1 = self.basic_model_3(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.shuffle3.inverse()(x)
+
+        x1,x2 = self.concat.inverse()(x)
+        mx1 = self.basic_model_2(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.shuffle2.inverse()(x)
+
+        x1,x2 = self.concat.inverse()(x)
+        mx1 = self.basic_model_1(x1)
+        x1, x2 = self.couple.inverse()([x1, x2, mx1])
+        x = self.split.inverse()([x1, x2])
+        x = self.shuffle1.inverse()(x)
+
+        # x = self.decoder_1(x)
+        # x = self.decoder_2(x)
+        # x = self.decoder_3(x)
+        # x = self.decoder_4(x)
+        return tf.keras.Model(x_in, x)
 
 def logistic_loss(x):
     # x = tf.clip_by_value(x, 1e-10, 1.0)
@@ -223,7 +228,7 @@ def model(args, dataset, dim):
     def train_step(net, inputs, optimizer):
         with tf.GradientTape() as tape:
             predictions = net(inputs)
-            loss = tf.reduce_mean(logistic_loss(predictions))
+            loss = tf.reduce_mean(logistic_loss(predictions)) + tf.reduce_mean(-tf.reduce_sum(net.diag))
         grads = tape.gradient(loss, net.trainable_weights)
         optimizer.apply_gradients(zip(grads, net.trainable_weights))
         return loss
@@ -236,27 +241,27 @@ def model(args, dataset, dim):
             print("Initializing from scratch.")
         for images in dataset:
             loss = train_step(nice, images, opt)
-            print("loss: {:1.2f}".format(loss.numpy()))
-
             ckpt.step.assign_add(1)
             if int(ckpt.step) % 100 == 0:
+                print("loss: {:1.2f}".format(loss.numpy()))
                 save_path = manager.save()
 
-                nice.is_inverse = True
+    ckpt.restore(manager.latest_checkpoint)
+    decoder = nice.inverse()
 
-                n = 15
-                digit_size = 28
-                figure = np.zeros((digit_size * n, digit_size * n))  
-                for i in range(n):
-                    for j in range(n):
-                        z_sample = np.array(np.random.randn(1, 784)) * 0.75 # 标准差取0.75而不是1
-                        x_decoded = nice.predict(z_sample)
-                        digit = x_decoded[0].reshape(digit_size, digit_size)
-                        figure[i * digit_size: (i + 1) * digit_size,
-                            j * digit_size: (j + 1) * digit_size] = digit
+    n = 15
+    digit_size = 28
+    figure = np.zeros((digit_size * n, digit_size * n))  
+    for i in range(n):
+        for j in range(n):
+            z_sample = np.array(np.random.randn(1, 784)) * 0.75 # 标准差取0.75而不是1
+            x_decoded = decoder(z_sample).numpy()
+            digit = x_decoded[0].reshape(digit_size, digit_size)
+            figure[i * digit_size: (i + 1) * digit_size,
+                j * digit_size: (j + 1) * digit_size] = digit
 
-                figure = np.clip(figure*255, 0, 255)
-                imageio.imwrite('test.png', figure)  
+    figure = np.clip(figure*255, 0, 255)
+    imageio.imwrite('test.png', figure)  
 
 
 

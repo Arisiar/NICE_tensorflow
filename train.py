@@ -11,8 +11,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 def minst(batch, epochs, size = 28):
     def preprocessing_fn(x):
-        # noise = 0.01 * tf.random.uniform(x.shape)
-        x = tf.cast((x / 255), tf.float32) # , tf.cast(y, tf.int64)
+        noise = 0.01 * tf.random.uniform(x.shape)
+        x = tf.cast((x / 255) - noise, tf.float32) # , tf.cast(y, tf.int64)
         x = tf.reshape(x, [size * size]) # , tf.reshape(y, [-1])
         return x
 
