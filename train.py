@@ -33,7 +33,7 @@ def train(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # config
-    parser.add_argument("--epochs", dest = 'epochs', default = 2, type = int,
+    parser.add_argument("--epochs", dest = 'epochs', default = 1, type = int,
                             help = "Number of epochs to train on. [100]")
     parser.add_argument("--save_epochs", dest = 'save_epochs', default = 10, type = int,
                             help = "Number of epochs to save. [10]")
