@@ -1,13 +1,6 @@
 import tensorflow as tf
 import argparse
-import numpy as np
-import logging, os
 from model import model
-import imageio
-logging.disable(logging.WARNING)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
-
-# tf.compat.v1.disable_eager_execution()
 
 def minst(batch, epochs, size = 28):
     def preprocessing_fn(x):
@@ -27,20 +20,20 @@ def minst(batch, epochs, size = 28):
 
 def train(args):
     dataset = minst(args.batch, args.epochs)
-
-    m = model(args, dataset, dim = 784)
+    
+    model(args, dataset)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # config
     parser.add_argument("--epochs", dest = 'epochs', default = 1, type = int,
                             help = "Number of epochs to train on. [100]")
-    parser.add_argument("--save_epochs", dest = 'save_epochs', default = 10, type = int,
-                            help = "Number of epochs to save. [10]")
+    parser.add_argument("--img_size", dest = 'img_size', default = 28, type = int,
+                            help = "Image size of MINST. [28]")
+    parser.add_argument("--test_num", dest = 'test_num', default = 10, type = int,
+                            help = "Number of test images. [10]")
     parser.add_argument("--batch", dest = 'batch', default = 128, type = int,
                             help = "Size of batch to train on. [128]")
-    parser.add_argument("--step", dest = 'step', default = 5, type = int,
-                            help = "Step per epoch. [5]") 
     parser.add_argument("--save_path", dest = 'save_path', default = './checkpoint',
                             help = "Path to save the trained model. [./checkpoint]")    
     parser.add_argument("--lr", default = 1e-03, dest = 'lr', type = float,

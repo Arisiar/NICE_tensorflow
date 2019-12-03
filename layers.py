@@ -32,6 +32,18 @@ class NICEBlock(tf.keras.layers.Layer):
         x = self.shuffle(x)
         return tf.keras.Model(x_in, x)        
 
+class CouplingLayer(tf.keras.layers.Layer):
+    def __init__(self, is_inverse = False):
+        super(CouplingLayer, self).__init__()
+        self.is_inverse = is_inverse
+
+    def call(self, inputs):
+        x, y = inputs
+        return (x + y if self.is_inverse else x - y)
+
+    def inverse(self):
+        return CouplingLayer(is_inverse = True)
+
 class ShufflingLayer(tf.keras.layers.Layer):
     def __init__(self):
         super(ShufflingLayer, self).__init__()
@@ -44,18 +56,6 @@ class ShufflingLayer(tf.keras.layers.Layer):
         x = tf.gather(x, self.idxs)
         x = tf.transpose(x)
         return x
-
-class CouplingLayer(tf.keras.layers.Layer):
-    def __init__(self, is_inverse = False):
-        super(CouplingLayer, self).__init__()
-        self.is_inverse = is_inverse
-
-    def call(self, inputs):
-        x, y = inputs
-        return (x + y if self.is_inverse else x - y)
-
-    def inverse(self):
-        return CouplingLayer(is_inverse = True)
 
 class SplitingLayer(tf.keras.layers.Layer):
     def __init__(self):

@@ -5,15 +5,17 @@ import os
 from layers import NICEBlock
 
 class NICEModel(tf.keras.Model):
+
     def __init__(self):
         super(NICEModel, self).__init__()
-
         self.block_1 = NICEBlock()
         self.block_2 = NICEBlock()
         self.block_3 = NICEBlock()
         self.block_4 = NICEBlock()
-        
-        self.diag = tf.Variable(tf.initializers.glorot_normal()(shape = [1, 784]), trainable = True)
+
+    def build(self, input_shape):
+        glorot_init = tf.initializers.glorot_normal()(shape = [1, input_shape[-1]])
+        self.diag = tf.Variable(glorot_init, trainable = True)
 
     def call(self, inputs):
         x = inputs
@@ -21,7 +23,6 @@ class NICEModel(tf.keras.Model):
         x = self.block_2(x)
         x = self.block_3(x)
         x = self.block_4(x)
-
         return tf.exp(self.diag) * x 
 
     def inverse(self):
@@ -31,7 +32,6 @@ class NICEModel(tf.keras.Model):
         x = self.block_3.inverse()(x)
         x = self.block_2.inverse()(x)
         x = self.block_1.inverse()(x)
-
         return tf.keras.Model(x_in, x)
 
 def logistic_loss(x):
@@ -39,7 +39,7 @@ def logistic_loss(x):
     # return tf.reduce_sum(tf.math.log1p(tf.exp(x)) + tf.math.log1p(tf.exp(-x)), axis = 1)
     return tf.reduce_sum((0.5 * x ** 2), axis = 1)
 
-def model(args, dataset, dim):
+def model(args, dataset):
      
     nice = NICEModel()
     
@@ -69,20 +69,14 @@ def model(args, dataset, dim):
                 print("loss: {:1.2f}".format(loss.numpy()))
                 save_path = manager.save()
 
-        decoder = nice.inverse()
-
-        n = 15
-        digit_size = 28
-        figure = np.zeros((digit_size * n, digit_size * n))  
-        for i in range(n):
-            for j in range(n):
-                sample = np.array(np.random.randn(1, 784)) * 0.75
-                x = decoder(sample).numpy()[0].reshape(digit_size, digit_size)
-                figure[i * digit_size: (i + 1) * digit_size,
-                    j * digit_size: (j + 1) * digit_size] = x
-
-        figure = np.clip(figure*255, 0, 255)
-        imageio.imwrite('test.png', figure)  
+        images = np.zeros((args.img_size * args.test_num, args.img_size * args.test_num))  
+        for i in range(args.test_num):
+            for j in range(args.test_num):
+                sample = np.array(np.random.randn(1, args.img_size * args.img_size)) * 0.75
+                x = nice.inverse()(sample).numpy()[0].reshape(args.img_size, args.img_size)
+                images[i * args.img_size: (i + 1) * args.img_size,
+                    j * args.img_size: (j + 1) * args.img_size] = x
+        imageio.imwrite('test.png', np.clip(images * 255, 0, 255))  
 
 
 
