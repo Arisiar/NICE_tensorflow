@@ -23,11 +23,11 @@ class NICEModel(tf.keras.Model):
         x = self.block_2(x)
         x = self.block_3(x)
         x = self.block_4(x)
-        return tf.exp(self.diag) * x 
+        return tf.multiply(tf.exp(self.diag),x)
 
     def inverse(self):
         x_in = tf.keras.Input(shape = (784,))
-        x = tf.keras.layers.Lambda(lambda s: tf.exp(-self.diag) * s)(x_in)
+        x = tf.multiply(tf.exp(-self.diag), x_in)
         x = self.block_4.inverse()(x)
         x = self.block_3.inverse()(x)
         x = self.block_2.inverse()(x)
@@ -65,19 +65,19 @@ def model(args, dataset):
         for images in dataset:
             loss = train_step(nice, images, opt)
             ckpt.step.assign_add(1)
-            if int(ckpt.step) % 100 == 0:
+            if int(ckpt.step) % args.save_step == 0:
                 print("loss: {:1.2f}".format(loss.numpy()))
                 save_path = manager.save()
 
         images = np.zeros((args.img_size * args.test_num, args.img_size * args.test_num))  
         for i in range(args.test_num):
             for j in range(args.test_num):
-                sample = np.array(np.random.randn(1, args.img_size * args.img_size)) * 0.75
-                x = nice.inverse()(sample).numpy()[0].reshape(args.img_size, args.img_size)
+                sample = np.array(np.random.randn(1, args.img_size * args.img_size), dtype = 'float32')
+                x = nice.inverse()(sample).numpy()[0]
+                x = np.reshape(x, [args.img_size, args.img_size])
                 images[i * args.img_size: (i + 1) * args.img_size,
                     j * args.img_size: (j + 1) * args.img_size] = x
-        imageio.imwrite('test.png', np.clip(images * 255, 0, 255))  
-
+        imageio.imwrite('test.png', np.clip(images * 255, 0, 255).astype('uint8'))  
 
 
 

@@ -32,6 +32,8 @@ if __name__ == '__main__':
                             help = "Image size of MINST. [28]")
     parser.add_argument("--test_num", dest = 'test_num', default = 10, type = int,
                             help = "Number of test images. [10]")
+    parser.add_argument("--save_step", dest = 'save_step', default = 100, type = int,
+                            help = "Number of save step. [100]")
     parser.add_argument("--batch", dest = 'batch', default = 128, type = int,
                             help = "Size of batch to train on. [128]")
     parser.add_argument("--save_path", dest = 'save_path', default = './checkpoint',
